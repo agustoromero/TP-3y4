@@ -1,0 +1,183 @@
+---
+title: |
+  <img src="img/logounsam.jpg" style="height:80px; float:right;"/>
+  **Trabajo Final – Ciencias Sociales**
+author: "Agustín Romero"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/agusr/Desktop/Diplo CSCyHD/TP-3y4")
+library(readr)
+library(readxl)
+library(DT)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(purrr)
+```
+
+# **Diploma Universitario**
+
+**en Ciencias Sociales Computacionales y Humanidades Digitales**
+
+**Consigna Trabajo Final**
+
+**Opción 1 (Módulos 3 y 4)**
+
+**Introducción**
+
+Forman parte de un equipo de análisis de datos territoriales. Actualmente, están trabajando en la caracterización de los municipios de Argentina a partir de indicadores socioeconómicos y de acceso a servicios básicos.
+
+Una de las etapas centrales del trabajo consiste en identificar grupos de municipios con características similares, con el objetivo de:
+
+-        generar un insumo analítico para el diseño y la focalización de políticas públicas,
+
+-        explorar patrones territoriales y desigualdades estructurales entre municipios,
+
+-        construir tipologías municipales a partir de información comparable y estandarizada.
+
+Para ello, van a trabajar con datos provenientes del Atlas de Gobiernos Locales y Regionales de América Latina y el Caribe, desarrollado por CAF – Banco de Desarrollo de América Latina y el Caribe.
+
+**Dataset**
+
+El Atlas de Gobiernos Locales y Regionales de América Latina y el Caribe es una plataforma de datos subnacionales que reúne indicadores demográficos, sociales, laborales y de acceso a servicios básicos para gobiernos locales y regionales de la región.
+
+Los indicadores están organizados conceptualmente en torno a distintas dimensiones asociadas a los Objetivos de Desarrollo Sostenible (ODS) y permiten realizar comparaciones entre territorios dentro y entre países.
+
+En este ejercicio, se trabajará exclusivamente con municipios de Argentina, utilizando un subconjunto de indicadores del Atlas.
+
+**Datos y variables**
+
+Los datos se encuentran en el [archivo](https://drive.google.com/file/d/17G67N-2cUabXSZ-dFl7UqTftZ06P2AlN/view?usp=sharing)correspondiente al Atlas CAF filtrado para Argentina. Cada fila representa un **municipio**, y las variables seleccionadas corresponden a **proporciones de población u hogares**, expresadas en valores entre 0 y 1 (salvo las variables de conteo).
+
+El dataset incluye, entre otras, variables asociadas a las siguientes dimensiones:
+
+●       **educación** (por ejemplo, analfabetismo, finalización del secundario),
+
+●       **mercado laboral** (participación laboral, desempleo),
+
+●       **servicios básicos** (agua, saneamiento, electricidad),
+
+●       **tecnologías de la información y la comunicación (TIC)**,
+
+●       **características demográficas y territoriales**.
+
+Pueden consultar el diccionario de variables en[este link.](https://docs.google.com/spreadsheets/d/12mugJsz59EtsbH6IFf4YU2A2Q_EPpym-/edit?usp=sharing&ouid=103078014026169952210&rtpof=true&sd=true)
+
+**Consignas**
+
+El objetivo general es identificar características comunes de los municipios de Argentina a partir de indicadores socioeconómicos y de condiciones de vida, utilizando técnicas de aprendizaje no supervisado. Para ello deberán
+
+-        explorar y describir los datos disponibles,
+
+-        analizar relaciones y correlaciones entre variables,
+
+-        evaluar la viabilidad de reducir la dimensionalidad de las diferentes dimensiones presentes en los indicadores
+
+-        identificar grupos de municipios con perfiles similares,
+
+-        interpretar los clusters resultantes
+
+El foco del ejercicio no está únicamente en la técnica, sino en la interpretación sustantiva de los resultados y su utilidad para el análisis territorial.
+
+**Entregables**
+
+Se esperan dos entregables:
+
+-        Un documento en formato word, google doc (no pdf) en el que se desarrollan las respuestas a las consignas, se presentan los principales resultados (tablas, visualizaciones) y las interpretaciones.
+
+-        Un notebook/script en el que se realiza el procesamiento del texto y se generan los modelos y visualizaciones correspondientes.
+
+**Modalidad de trabajo**
+
+El trabajo deberá hacerse en grupos de hasta 3 personas.
+
+El trabajo deberá ser [*subido a Google Classroom por solamente uno de los integrantes*]{.underline} del grupo. Deberá constar en el trabajo el nombre de ambos. 
+
+**Fecha de entrega**
+
+La fecha última de entrega será el domingo **08/03/2026 a las 23:59**. No se concederán prórrogas.
+
+## Importación
+
+```{r}
+
+m4_atlas_argentina <- read_csv("m4_atlas_argentina.csv")
+dicc_atlas_argentina <- read_csv("diccionario_atlas_argentina.csv")
+
+#veo 4 filas sin separar en columnas con separador "," arreglo
+
+m_bad <- m4_atlas_argentina %>%
+  filter(str_detect(codigo_unico, ","))
+#exporto en excel y arreglo
+write_xlsx(
+     m4_atlas_argentina,
+     path = "m4_atlas_argentina.xlsx")
+#importo corregido
+m4_atlas_fixed <- read_xlsx("m4_atlas_fixed.xlsx")
+
+```
+
+## Exploración
+
+```{r}
+DT::datatable(
+  dicc_atlas_argentina,
+  caption = "Anexo A. Diccionario de variables – Atlas Argentina",
+  options = list(
+    scrollY = "500px",
+    scrollX = TRUE,
+    paging = FALSE,
+    dom = 't'
+  ),
+  rownames = FALSE
+)
+
+
+```
+
+Clasificación de variables en dimensiones agrego una columna al diccionario con una dimension que agrupa variables segun su tipo de información o eje.
+
+```{r}
+
+dicc_atlas_clasif <- read_excel(
+  "dicc_atlas_clasif.xlsx"
+)
+
+
+DT::datatable(
+  dicc_atlas_clasif,
+  caption = "Anexo A. Diccionario Atlas Argentina- con clasificación",
+  options = list(
+    scrollY = "500px",
+    scrollX = TRUE,
+    paging = FALSE,
+    dom = 't'
+  ),
+  rownames = FALSE
+)
+
+```
+
+Nuevas variables SIPA
+
+```{r}
+act_estab <- read_csv("datasipa/actividades_establecimientos.csv")
+
+cod_depto <- read_csv("datasipa/codigo_departamento_provincia.csv")
+
+dep_act_sexo <- read_csv(
+  "datasipa/Datos_por_departamento_actividad_y_sexo.csv"
+)
+
+dep_act <- read_csv(
+  "datasipa/Datos_por_departamento_y_actividad.csv"
+)
+
+dist_estab_sexo <- read_csv(
+  "datasipa/distribucion_establecimientos_productivos_sexo.csv"
+)
+
+```

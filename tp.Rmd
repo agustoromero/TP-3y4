@@ -1,0 +1,185 @@
+---
+title: "tp"
+author: "Agus"
+date: "2026-01-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Exploración y descripción de los datos
+
+#### 1.1 Descripción general del dataset y universo de análisis
+
+El análisis se basa en el conjunto de datos del *Atlas de Gobiernos Locales y Regionales de América Latina y el Caribe* filtrado para Argentina. El dataset contiene **2.344 observaciones**, correspondientes a unidades subnacionales, mayormente municipios, e incluye indicadores socioeconómicos, demográficos y de acceso a servicios básicos.
+
+Cada observación representa una unidad territorial y la mayoría de las variables sustantivas se expresan como **proporciones de población u hogares**, con valores comprendidos entre 0 y 1. Asimismo, se incluyen variables de conteo como población total y cantidad de hogares, que permiten dimensionar el tamaño relativo de los municipios.
+
+El año de referencia de los indicadores es **2022**, con muy pocos valores faltantes en esta variable, lo que garantiza la comparabilidad temporal entre municipios.
+
+#### 1.2 Tamaño poblacional y heterogeneidad territorial
+
+Los municipios argentinos presentan una **marcada heterogeneidad en términos de tamaño poblacional**. La población mínima registrada es de apenas 5 habitantes, mientras que el máximo supera los 17 millones, reflejando la coexistencia de pequeñas localidades rurales y grandes aglomerados urbanos dentro del mismo dataset.
+
+La distribución de la población es fuertemente asimétrica: mientras que la mediana poblacional es de aproximadamente 2.400 habitantes, el promedio supera los 39.000, lo que indica la presencia de pocos municipios muy grandes que elevan la media. Una dinámica similar se observa en la variable hogares.
+
+Esta heterogeneidad refuerza la pertinencia de utilizar indicadores normalizados (proporciones) para el análisis comparativo, aunque también sugiere la necesidad de considerar cuidadosamente el rol del tamaño poblacional en la interpretación de los resultados.
+
+#### 1.3 Distribución de los indicadores socioeconómicos y de servicios
+
+El análisis descriptivo de los indicadores muestra patrones diferenciados entre dimensiones:
+
+-   
+
+-   
+
+    **Educación:**\
+    La tasa de analfabetismo presenta valores bajos en la mayoría de los municipios (mediana cercana al 3%), aunque con casos extremos que superan el 50%. La finalización del secundario en adultos muestra una distribución más dispersa, con valores que oscilan entre 0 y 0,9, lo que sugiere desigualdades educativas persistentes entre territorios.
+
+-   
+
+-   
+
+    **Mercado laboral:**\
+    Las tasas de participación laboral femenina y masculina muestran niveles promedio elevados, aunque con diferencias sistemáticas por sexo. El desempleo adulto presenta una mediana cercana al 4,4%, pero con valores máximos superiores al 30%, indicando una importante heterogeneidad en las condiciones del mercado de trabajo local.
+
+-   
+
+-   
+
+    **Servicios básicos:**\
+    El acceso a electricidad es casi universal en la mayoría de los municipios (mediana cercana al 98%), mientras que el acceso a agua mejorada y saneamiento presenta mayores disparidades territoriales. En particular, el saneamiento mejorado muestra una dispersión considerable, lo que lo convierte en un indicador clave para el análisis de desigualdades en infraestructura.
+
+-   
+
+-   
+
+    **Tecnologías de la información y la comunicación (TIC):**\
+    El acceso a telefonía celular es elevado y relativamente homogéneo, mientras que el acceso a computadoras presenta una mayor variabilidad, lo que sugiere la existencia de brechas digitales más profundas en este último indicador.
+
+-   
+
+-   
+
+    **Otros indicadores estructurales:**\
+    Variables como la recolección de residuos y el empleo público muestran distribuciones heterogéneas, reflejando distintos niveles de capacidad institucional y provisión de servicios a escala municipal.
+
+-   
+
+#### 1.4 Valores faltantes y definición del universo analítico
+
+Un aspecto relevante del dataset es la presencia de **valores faltantes (NA)** en varias de las variables sustantivas. En particular, un conjunto amplio de indicadores —educación, mercado laboral, servicios básicos, TIC, etnia y hogares— presenta aproximadamente **108 observaciones con valores faltantes**, lo que representa cerca del **4,6% del total de unidades territoriales**.
+
+Estos valores faltantes no se distribuyen de manera aislada por variable, sino que tienden a concentrarse en un subconjunto específico de municipios, lo que sugiere que no se trata de datos faltantes completamente aleatorios. Por este motivo, y con el objetivo de garantizar la comparabilidad entre unidades territoriales en las etapas posteriores de reducción de dimensionalidad y clustering, se opta por **definir un universo analítico restringido a aquellos municipios con información completa en las variables seleccionadas**.
+
+Esta decisión implica trabajar con un subconjunto ligeramente menor de municipios, pero permite evitar sesgos derivados de imputaciones arbitrarias y asegura la coherencia del análisis multivariado.
+
+#### 1.5 Implicancias para las etapas siguientes
+
+La exploración descriptiva confirma que:
+
+-   
+
+-   
+
+    el dataset presenta una **alta heterogeneidad territorial**,
+
+-   
+
+-   
+
+    las variables capturan **dimensiones conceptualmente diferenciables pero parcialmente correlacionadas**,
+
+-   
+
+-   
+
+    y existe un conjunto reducido pero relevante de municipios con información incompleta.
+
+En consecuencia, resulta metodológicamente apropiado avanzar hacia una etapa de **análisis de relaciones entre variables y reducción de dimensionalidad**, con el fin de sintetizar la información disponible y preparar el terreno para la identificación de grupos de municipios con perfiles similares.
+
+```{r, echo=FALSE}
+summary(m4_atlas_argentina)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+na_summary <- m4_atlas_argentina %>%
+  summarise(across(
+    everything(),
+    list(
+      n_na = ~sum(is.na(.)),
+      prop_na = ~mean(is.na(.))
+    )
+  )) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c("variable", "metric"),
+    names_pattern = "^(.*)_(n_na|prop_na)$",
+    values_to = "valor"
+  ) %>%
+  pivot_wider(
+    names_from = metric,
+    values_from = valor
+  ) %>%
+  arrange(desc(prop_na))
+
+na_summary
+
+
+```
+
+```{r}
+filas_con_na <- m4_atlas_argentina %>%
+  filter(if_any(everything(), is.na))
+
+nrow(filas_con_na)
+nrow(filas_con_na) / nrow(m4_atlas_argentina)
+
+base_sin_na <- m4_atlas_argentina %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+
+filas_con_na
+
+library(dplyr)
+library(stringr)
+
+filas_con_na <- filas_con_na %>%
+  mutate(
+    cod_prov = str_sub(codigo_unico, 4, 5)
+  )
+filas_con_na %>%
+  count(cod_prov, sort = TRUE)
+distribucion_prov <- m4_atlas_argentina %>%
+  mutate(cod_prov = str_sub(codigo_unico, 4, 5)) %>%
+  count(cod_prov, name = "total_municipios")
+
+excluidos_prov <- filas_con_na %>%
+  count(cod_prov, name = "municipios_excluidos")
+
+comparacion_prov <- distribucion_prov %>%
+  left_join(excluidos_prov, by = "cod_prov") %>%
+  mutate(
+    municipios_excluidos = replace_na(municipios_excluidos, 0),
+    prop_excluidos = municipios_excluidos / total_municipios
+  ) %>%
+  arrange(desc(prop_excluidos))
+
+comparacion_prov
+
+
+
+summary(filas_con_na$poblacion)
+summary(m4_atlas_argentina$poblacion)
+filas_con_na %>%
+  summarise(
+    poblacion_media = mean(poblacion, na.rm = TRUE),
+    poblacion_mediana = median(poblacion, na.rm = TRUE)
+  )
+
+
+```

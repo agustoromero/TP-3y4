@@ -1,0 +1,32 @@
+variable,definicion
+codigo_unico,Identificador único de la unidad territorial subnacional dentro del Atlas
+region,Región geográfica de América Latina y el Caribe a la que pertenece la unidad territorial
+pais,Nombre del país al que pertenece la unidad subnacional
+codigo_pais,Código identificador del país
+"nombre_subnacional,""Nombre oficial de la unidad subnacional (provincia, estado, municipio, etc.)"""
+"nombre_nivel,""Denominación del nivel administrativo (por ejemplo: provincia, municipio, departamento)"""
+nivel_gobierno,Nivel de gobierno de la unidad territorial (local o regional)
+codigo_nivel,Código del nivel de gobierno según la clasificación del Atlas
+gob_regional,Indicador de pertenencia al nivel de gobierno regional
+gob_local,Indicador de pertenencia al nivel de gobierno local
+poblacion,Número total de personas que residen en la unidad territorial
+poblacion_anio,Año de referencia del dato de población
+urbano,Proporción de la población que reside en áreas urbanas
+analfabetismo,Proporción de la población de 15 años y más que no sabe leer ni escribir
+fin_secundaria_adultos,Proporción de la población adulta que ha completado el nivel secundario
+participacion_mujeres,Tasa de participación laboral de las mujeres
+participacion_hombres,Tasa de participación laboral de los hombres
+agua_mejorada,Proporción de hogares con acceso a fuentes de agua mejorada
+saneamiento_mejorado,Proporción de hogares con acceso a servicios de saneamiento mejorado
+electricidad,Proporción de hogares con acceso a servicio de electricidad
+desempleo_adulto,Tasa de desempleo de la población adulta
+desempleo_adulto_mujer,Tasa de desempleo de mujeres adultas
+desempleo_adulto_hombre,Tasa de desempleo de hombres adultos
+recoleccion_residuos,Proporción de hogares con servicio de recolección de residuos sólidos
+empleo_publico_categoria,Proporción de personas ocupadas que se desempeñan como empleados del sector público según su categoría ocupacional
+etnia_indigena,Proporción de la población que se autoidentifica como indígena
+etnia_afro,Proporción de la población que se autoidentifica como afrodescendiente
+tics_computadora,Proporción de hogares con acceso a computadora
+tics_celular,Proporción de hogares con acceso a teléfono celular
+tiene_ods,Indicador binario que señala si la unidad territorial cuenta con información disponible para indicadores asociados a los ODS
+hogares,Número total de hogares en la unidad territorial
