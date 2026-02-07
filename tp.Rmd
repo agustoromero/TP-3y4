@@ -29,13 +29,11 @@ dir.create("outputs/graficos", showWarnings = FALSE)
 
 <img src="img/logounsam.jpg" style="height:80px; float:right;"/>
 
-## 1. Exploración y descripción de los datos
+# 1. Exploración y descripción de los datos
 
-#### 1.1 Descripción general del dataset y universo de análisis
+## 1.1 Descripción general del dataset y universo de análisis
 
-El análisis se basa en el conjunto de datos del *Atlas de Gobiernos Locales y Regionales de América Latina y el Caribe* filtrado para Argentina. El dataset contiene 2.344 observaciones, correspondientes a unidades subnacionales, mayormente municipios, e incluye indicadores socioeconómicos, demográficos y de acceso a servicios básicos. Cada observación representa una unidad territorial y la mayoría de las variables se expresan como proporciones de población, con valores comprendidos entre 0 y 1. Asimismo, se incluyen variables de conteo como población total y cantidad de hogares que permiten dimensionar el tamaño relativo de los municipios. El año de referencia de los indicadores es 2022, lo que garantiza la comparabilidad temporal entre municipios. La base cuenta con 158 filas con algún NA, 5 filas tienen toda la informacion en la celda de código único, lo arreglo manualmente para recuperarlas, luego excluyo las 24 filas que refieren a provincias y de las sobrantes excluyo filas sin población. Como resultado las filas con NA que dejo fuera de la base para trabajar, corresponden a 130 unidades subprovinciales que incluyen a 89.523 personas, una porción muy poco significativa. Estos valores faltantes no se distribuyen de manera aislada por variable, lo que sugiere que no se trata de datos faltantes completamente aleatorios. Por este motivo, se opta por definir un universo analítico restringido a aquellos municipios con información completa en las variables seleccionadas.
-
-#### Por otra parte se transforman las variables continuas almacenadas como tipo "character" a "numeric" para no tener inconvenientes en el posterior tratamiento de las mismas.
+El análisis se basa en el conjunto de datos del *Atlas de Gobiernos Locales y Regionales de América Latina y el Caribe* filtrado para Argentina. El dataset contiene 2.344 observaciones, correspondientes a unidades subnacionales, mayormente municipios, e incluye indicadores socioeconómicos, demográficos y de acceso a servicios básicos. Cada observación representa una unidad territorial y la mayoría de las variables se expresan como proporciones de población, con valores comprendidos entre 0 y 1. Asimismo, se incluyen variables de conteo como población total y cantidad de hogares que permiten dimensionar el tamaño relativo de los municipios. El año de referencia de los indicadores es 2022, lo que garantiza la comparabilidad temporal entre municipios. La base cuenta con 158 filas con algún NA, 5 filas tienen toda la informacion en la celda de código único, lo arreglo manualmente para recuperarlas, luego excluyo las 24 filas que refieren a provincias y de las sobrantes excluyo filas sin población. Como resultado las filas con NA que dejo fuera de la base para trabajar, corresponden a 130 unidades subprovinciales que incluyen a 89.523 personas, una porción muy poco significativa. Estos valores faltantes no se distribuyen de manera aislada por variable, lo que sugiere que no se trata de datos faltantes completamente aleatorios. Por este motivo, se opta por definir un universo analítico restringido a aquellos municipios con información completa en las variables seleccionadas. Por otra parte se transforman las variables continuas almacenadas como tipo "character" a "numeric" para no tener inconvenientes en el posterior tratamiento de las mismas.
 
 ```{r, echo=FALSE}
 #Leo base y resumo información
@@ -129,11 +127,11 @@ base_sin_na <- base_sin_na %>%
 summary(base_sin_na)
 ```
 
-#### 1.2 Tamaño poblacional y heterogeneidad territorial
+## 1.2 Tamaño poblacional y heterogeneidad territorial
 
 Los municipios argentinos presentan una marcada heterogeneidad en términos de tamaño poblacional. La población mínima registrada es de apenas 5 habitantes, mientras que el máximo supera los 1.837.168, reflejando la coexistencia de pequeñas localidades rurales y grandes aglomerados urbanos dentro del mismo dataset. La distribución de la población es fuertemente asimétrica: mientras que la mediana poblacional es de aproximadamente 2.522 habitantes, el promedio supera los 20.634, lo que indica la presencia de municipios muy grandes que elevan la media. Una dinámica similar se observa en la variable hogares. Esta heterogeneidad refuerza la pertinencia de utilizar indicadores normalizados (proporciones) para el análisis comparativo, aunque también sugiere la necesidad de considerar cuidadosamente el rol del tamaño poblacional en la interpretación de los resultados.
 
-#### 1.3 Distribución de los indicadores socioeconómicos y de servicios
+## 1.3 Distribución de los indicadores socioeconómicos y de servicios
 
 El análisis descriptivo de los indicadores muestra patrones diferenciados entre dimensiones:
 
@@ -149,7 +147,7 @@ El análisis descriptivo de los indicadores muestra patrones diferenciados entre
 -   **Tecnologías de la información y la comunicación (TIC):**\
     El acceso a telefonía celular es elevado y relativamente homogéneo con un acceso promedio del 81,9%, mientras que el acceso a computadoras presenta una mayor variabilidad con un acceso promedio de 29%, lo que sugiere la existencia de brechas digitales más profundas en este último indicador.
 
-#### 1.4 Implicancias para las etapas siguientes
+## 1.4 Implicancias para las etapas siguientes
 
 La exploración descriptiva confirma que:
 
@@ -334,7 +332,7 @@ Busca capturar diferencias estructurales entre municipios asociadas al grado de 
 
 Estas variables funcionan como condicionantes del perfil municipal. Se mantienen como indicador directo y eventualmente se utilizará como variable auxiliar o de control en etapas posteriores (clustering o interpretación). No se corre PCA aquí.
 
-## 5.2 PCA – Dimensión educativa
+## 3.2 PCA – Dimensión educativa
 
 El nivel educativo estructural de la población adulta, incluye las variables:
 
@@ -369,7 +367,7 @@ Resultados e interpretación de la varianza:
 
 El PCA arroja los siguientes resultados: **Primer componente (PC1):** explica el **77,5% de la varianza total.** **Segundo componente (PC2):** explica el **22,5% restante.** PC1 puede interpretarse como un eje de grado educativo rezagado o de piso mínimo obligatorio superado. PC2 no presenta un componente claro y sustantivo por su significativa menor explicacion de la varianza del vector educativo; su bajo peso explicativo y su menor claridad conceptual, **no justifican su retención** para etapas posteriores. La oposición casi perfecta entre analfabetismo y finalización del secundario indica que, en el nivel municipal, ambas variables capturan un mismo fenómeno latente, observado desde extremos distintos del proceso educativo. Para facilitar la interpretación, el índice puede reescalarse invirtiendo el signo, de modo que valores más altos representen mejores niveles educativos. El score del PCA funciona como una variable sintética, permite reducir dimensionalidad, evitar colinealidad y utilizar la dimensión educativa en análisis posteriores como clustering o tipologías municipales. El índice educativo, puede usarse como **variable dependiente** (ej. explicar educación por estructura productiva), o como **regresor** (ej. explicar servicios según capital educativo), y evita multicolinealidad entre variables educativas.
 
-## 5.3 PCA – Dimensión mercado laboral
+## 3.3 PCA – Dimensión mercado laboral
 
 La condicion estructurales del mercado de trabajo local incluye las variables:
 
@@ -408,7 +406,7 @@ Resultados e interpretación de la varianza:
 
 El análisis identifica un primer componente (PC1) que explica el **47,1% de la varianza**, seguido por un segundo componente (PC2) con **24,1%** y un tercer componente (PC3) con **17,5%**. En conjunto, los tres primeros componentes concentran más del **88% de la variabilidad** del sistema laboral municipal. El **PC1** se interpreta como un eje de **desempeño laboral general del municipio**, dominado por cargas positivas en las tasas de desempleo adulto (total, femenino y masculino) y cargas negativas en la participación laboral. Este componente ordena a los municipios según un gradiente de fragilidad del mercado de trabajo: valores altos del score indican mayores niveles de desempleo y menor participación, mientras que valores bajos reflejan una inserción laboral relativamente más favorable. Para facilitar la lectura sustantiva, el índice puede invertirse de modo que valores más altos representen mejores condiciones laborales. El **PC2** captura principalmente un eje de **participación laboral**, con cargas elevadas y positivas tanto en participación femenina como masculina. A diferencia del PC1, este componente no refleja desempleo sino intensidad de participación en el mercado de trabajo. Su interpretación es sustantiva, pero remite a un fenómeno distinto del desempeño laboral general; por ello, su uso resulta pertinente solo si el análisis requiere distinguir entre niveles de desempleo y niveles de participación. El **PC3**, con un **17,5% de varianza explicada**, está fuertemente asociado al empleo público, diferenciando municipios según el peso relativo de este sector. Si bien no sintetiza el conjunto del sistema laboral, puede considerarse relevante cuando el foco analítico está puesto en la estructura ocupacional o en el rol del empleo público como amortiguador del desempleo. La dimensión laboral no se sintetiza adecuadamente en un solo índice; requiere al menos tres ejes para distinguir mercados frágiles, baja participación y alta dependencia del empleo público.
 
-## 5.4 PCA – Dimensión servicios básicos
+## 3.4 PCA – Dimensión servicios básicos
 
 **Se busca** analizar el grado de cobertura de infraestructura y servicios esenciales a partir de las siguientes variables:
 
@@ -442,7 +440,7 @@ Resultados e interpretación de la varianza:
 
 El PCA muestra un primer componente (PC1) que explica el **61,7% de la varianza**, seguido por un segundo componente (PC2) con **18,2%**. Los componentes restantes aportan variabilidad adicional, pero de menor relevancia sustantiva. El **PC1** se interpreta como un eje de **acceso general a servicios básicos**, ya que todas las variables (agua mejorada, saneamiento, electricidad y recolección de residuos) presentan cargas elevadas y del mismo signo. Este componente sintetiza un fenómeno de infraestructura básica integral: los municipios se ordenan según su nivel global de cobertura de servicios esenciales. Dado el signo negativo de las cargas, valores más bajos del score indican mayor acceso, por lo que resulta conveniente invertir el índice para una lectura directa. El **PC2** introduce una diferenciación entre tipos de servicios, particularmente entre electricidad y agua/saneamiento. Este componente no representa un gradiente de acceso general, sino un **perfil diferencial de cobertura**, útil únicamente si se desea distinguir municipios con patrones específicos de provisión de servicios. Dado que interesa **tipologías de provisión de servicios**, PC2 **vale la pena**
 
-## 5.5 PCA – Dimensión TIC
+## 3.5 PCA – Dimensión TIC
 
 **Busca** captar brechas digitales a nivel territorial a partir de las siguientes variables:
 
@@ -470,7 +468,7 @@ Resultados e interpretación de la varianza:
 
 El PCA identifica un primer componente (PC1) que explica el **69,2% de la varianza**, seguido por un segundo componente (PC2) que explica el **30,8%** restante. El **PC1** se interpreta como un eje de **acceso digital general**, ya que el acceso a computadora y a celular cargan de forma idéntica y en el mismo sentido. Este componente sintetiza la inclusión digital básica de los municipios, ordenándolos según el nivel conjunto de acceso a tecnologías de la información. El signo negativo indica que valores más bajos del score corresponden a mayor acceso, por lo que resulta conveniente invertir el índice para su interpretación sustantiva. El **PC2** refleja una **oposición entre tipos de dispositivos**, diferenciando municipios donde predomina el acceso vía celular de aquellos con mayor acceso a computadoras. Aunque explica una proporción relevante de la varianza, no sintetiza el fenómeno de inclusión digital en su conjunto, sino una diferencia composicional. Su interpretación resulta pertinente solo si el análisis busca distinguir modalidades de acceso, más que niveles generales de conectividad, considerados altos; dado que no es lo mismo conectividad “básica” que capacidad digital instalada, distinguimos PC2.
 
-## 5.6 PCA – Dimensión étnica
+## 3.6 PCA – Dimensión étnica
 
 **Busca** describir diferencias en la composición étnica de los territorios a partir de las variables:
 
@@ -498,7 +496,7 @@ Resultados e interpretación de la varianza:
 
 El PCA presenta dos componentes con pesos prácticamente equivalentes: el PC1 explica el **51,6% de la varianza**, y el PC2 el **48,4%** restante. El **PC1** puede interpretarse como un eje de **presencia relativa de población étnicamente identificada**, dado que tanto la población indígena como afrodescendiente cargan de forma similar y en el mismo sentido. Este componente ordena a los municipios según el peso agregado de estos grupos en la estructura poblacional. El signo negativo implica que valores más bajos del score corresponden a mayor presencia relativa, por lo que el índice puede invertirse para facilitar su lectura. El **PC2** introduce una diferenciación entre **tipos de población étnica**, oponiendo municipios con mayor presencia indígena a aquellos con mayor presencia afrodescendiente. Este componente no representa un gradiente de intensidad étnica, sino una **diferencia composicional**, y solo resulta relevante si el análisis requiere distinguir perfiles étnicos específicos más que niveles agregados de presencia. **Cerca de 0** → baja o nula presencia étnica registrada. **Valores extremos PC1** → alta presencia étnica. **Signo PC2** → *qué grupo predomina*
 
-## Base Prefiles municipales
+## 3.7 Base Prefiles municipales
 
 ```{r}
 # -----------------------------
