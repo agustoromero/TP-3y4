@@ -1,6 +1,6 @@
 ---
-title: |
   <img src="img/logounsam.jpg" style="height:80px; float:right;"/>
+title: 
   **Trabajo Final – Ciencias Sociales**
 author: "Agustín Romero"
 output: html_notebook

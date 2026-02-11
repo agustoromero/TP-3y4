@@ -5,6 +5,49 @@ author: "Agustín Romero"
 output: html_notebook
 ---
 
+```{=html}
+<style>
+/* HEADER FIJO */
+#header-fijo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 90px;
+  background-color: white;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 25px;
+  z-index: 1000;
+}
+
+/* TITULO */
+#header-fijo h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+
+/* LOGO */
+#header-fijo img {
+  height: 60px;
+}
+
+/* CORRER CONTENIDO PARA QUE NO QUEDE TAPADO */
+body {
+  padding-top: 110px;
+  background-color: #f7f7f7;
+}
+</style>
+```
+::: {#header-fijo}
+<h1>Trabajo Final – Módulos 3 y 4 - DCSCyHD - Agustín Romero</h1>
+
+<img src="img/logoidaes.jpg" alt="Logo IDAES"/>
+:::
+
 ```{r setup, include=FALSE}
 #cargo librerías
 library(readr)
@@ -15,6 +58,10 @@ library(stringr)
 library(tidyr)
 library(purrr)
 library(writexl)
+library(ggplot2)
+library(cluster)
+library(tidyverse)
+
 #set general de chunks
 knitr::opts_chunk$set(echo = TRUE)
 #set directorio de trabajo principal
@@ -26,8 +73,6 @@ dir.create("outputs", showWarnings = FALSE)
 dir.create("outputs/tablas", showWarnings = FALSE)
 dir.create("outputs/graficos", showWarnings = FALSE)
 ```
-
-<img src="img/logounsam.jpg" style="height:80px; float:right;"/>
 
 # 1. Exploración y descripción de los datos
 
@@ -557,4 +602,579 @@ base_perfiles <- base_pca %>%
 
 # Chequeo rápido
 head(base_perfiles)
+```
+
+# 4. Fase de Aprendizaje No Supervisado y Caracterización Municipal
+
+Este apartado describe los pasos metodológicos seguidos para la construcción de una tipología de municipios mediante técnicas de **aprendizaje no supervisado**, a partir del objeto final generado en la etapa de **reducción de dimensionalidad mediante Análisis de Componentes Principales (PCA)**. El objetivo es identificar patrones territoriales y desigualdades estructurales entre municipios, utilizando información comparable y estandarizada.
+
+## 4.1 Determinación del número de clusters
+
+Previo a la aplicación del algoritmo de *K-means*, se evaluó la cantidad adecuada de grupos a conformar. Dado que este método requiere fijar ex ante el número de clusters, se recurrió a criterios habituales del análisis de conglomerados para orientar esta decisión. En particular, se analizaron distintos valores de *k* considerando el equilibrio entre la capacidad de representación de la heterogeneidad territorial y la necesidad de mantener una tipología interpretable.
+
+Uno de los criterios utilizados fue el **"punto de quiebre"**, que se basa en observar la evolución de la variabilidad interna de los clusters a medida que aumenta el número de grupos. A medida que *k* crece, la suma de las distancias intra-cluster disminuye, aunque a partir de cierto punto las mejoras adicionales son marginales. El valor de *k* seleccionado corresponde a aquel a partir del cual la reducción de la variabilidad interna deja de ser significativa, lo que indica un equilibrio razonable entre ajuste del modelo y parsimonia.
+
+```{r}
+
+vars_clustering <- c(
+  "educacion_nivel",
+  "laboral_desempeno", "laboral_participacion", "laboral_empleo_publico",
+  "servicios_acceso_general", "servicios_composicion",
+  "tics_acceso_general", "tics_tipo_acceso",
+  "etnia_presencia", "etnia_composicion"
+)
+
+matriz_clustering <- base_perfiles %>%
+  select(all_of(vars_clustering)) %>%
+  drop_na()
+
+#Estandarizamos
+
+matriz_clustering_scaled <- scale(matriz_clustering)
+
+#determinamos k
+
+set.seed(123)
+
+wss <- map_dbl(
+  2:10,
+  ~ kmeans(matriz_clustering_scaled, centers = .x, nstart = 25)$tot.withinss
+)
+
+quiebre_df <- tibble(
+  k = 2:10,
+  wss = wss
+)
+
+ggplot(quiebre_df, aes(k, wss)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Método para K-means",
+    x = "Número de clusters (k)",
+    y = "Suma de cuadrados intra-cluster"
+  ) +
+  theme_minimal()
+
+
+```
+
+### Evaluación de la calidad del agrupamiento
+
+Como complemento, se incorporó un criterio basado en la **calidad de la asignación de las observaciones a los grupos**, evaluando simultáneamente la cohesión interna y la separación entre clusters. Este enfoque permite verificar si los municipios asignados a un mismo grupo son efectivamente similares entre sí y suficientemente distintos de los municipios pertenecientes a otros grupos.
+
+Este criterio resulta particularmente útil para comparar distintas soluciones de clustering y verificar si el número de grupos seleccionado presenta una estructura clara y consistente, más allá de la reducción mecánica de la varianza intra-grupo, para la caracterización de municipios desde una perspectiva de políticas públicas.
+
+```{r}
+#
+
+calidad_prom <- map_dbl(
+  2:10,
+  function(k) {
+    km <- kmeans(matriz_clustering_scaled, centers = k, nstart = 25)
+    sil <- silhouette(km$cluster, dist(matriz_clustering_scaled))
+    mean(sil[, 3])
+  }
+)
+
+sil_df <- tibble(
+  k = 2:10,
+  calidad = calidad_prom
+)
+
+ggplot(sil_df, aes(k, calidad)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Análisis de calidad",
+    x = "Número de clusters (k)",
+    y = "calidad promedio"
+  ) +
+  theme_minimal()
+```
+
+## 4.2 Aplicación del algoritmo K-means
+
+Definido el número de clusters, se aplicó el algoritmo de **K-means** sobre la matriz de datos construida a partir de los scores del Análisis de Componentes Principales (PCA). El uso de estos scores permite trabajar con variables sintéticas, no correlacionadas entre sí, que resumen las principales dimensiones de desempeño municipal, evitando problemas de multicolinealidad y escalas heterogéneas.
+
+El resultado del procedimiento es una tipología de municipios agrupados en conjuntos relativamente homogéneos en términos de sus características estructurales. La asignación a clusters se incorporó como una nueva variable en la base de datos, la cual es utilizada posteriormente para la interpretación de perfiles y el análisis territorial.
+
+```{r}
+#
+set.seed(123)
+
+k_optimo <- 6
+
+kmeans_final <- kmeans(
+  matriz_clustering_scaled,
+  centers = k_optimo,
+  nstart = 50
+)
+
+base_perfiles <- base_perfiles %>%
+  mutate(cluster_kmeans = factor(kmeans_final$cluster))
+```
+
+```{r}
+perfiles_clusters <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    across(
+      c(
+        educacion_nivel,
+        laboral_desempeno,
+        laboral_participacion,
+        laboral_empleo_publico,
+        servicios_acceso_general,
+        servicios_composicion,
+        tics_acceso_general,
+        tics_tipo_acceso,
+        etnia_presencia,
+        etnia_composicion
+      ),
+      mean,
+      na.rm = TRUE
+    ),
+    n_municipios = n(),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+perfiles_clusters <- perfiles_clusters %>%
+  left_join(
+    base_perfiles %>%
+      group_by(cluster_kmeans) %>%
+      summarise(
+        poblacion_promedio = mean(poblacion, na.rm = TRUE),
+        proporcion_urbano = mean(urbano, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    by = "cluster_kmeans"
+  )
+#muestro que el 6 tiene muy pocas unidades territoriales
+base_perfiles %>%
+  count(cluster_kmeans) %>%
+  mutate(porcentaje = n / sum(n))
+
+#veo si alguno esta muy dominado por grandes ciudades
+base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    poblacion_mediana = median(poblacion, na.rm = TRUE),
+    poblacion_max = max(poblacion, na.rm = TRUE)
+  )
+#veo proporcion urbana vs rural
+base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    prop_urbano = mean(urbano, na.rm = TRUE)
+  )
+
+
+#grafico
+perfiles_clusters %>%
+  select(-n_municipios, -poblacion_promedio, -proporcion_urbano) %>%
+  pivot_longer(
+    cols = -cluster_kmeans,
+    names_to = "dimension",
+    values_to = "score"
+  ) %>%
+  ggplot(aes(dimension, score, fill = factor(cluster_kmeans))) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(
+    fill = "Cluster",
+    x = "",
+    y = "Score promedio (PCA)"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.3 Comparación de la varianza intra-cluster entre métodos de agrupamiento
+
+El análisis de varianza intra-cluster permite evaluar el grado de **homogeneidad interna** de los grupos obtenidos mediante distintas técnicas de clustering. Este indicador mide cuán similares son entre sí los municipios que integran un mismo cluster respecto de las variables analizadas. Valores más bajos indican grupos más compactos, es decir, con menor dispersión interna y mayor coherencia en términos socioeconómicos.
+
+Los resultados obtenidos muestran que el método jerárquico de Ward presenta sistemáticamente menores niveles de varianza intra-cluster que el algoritmo K-means en todas las dimensiones consideradas: Educación, Etnia, Laboral, Servicios y TICs. Esto implica que los clusters jerárquicos tienden a reunir municipios con características más homogéneas dentro de cada grupo, lo cual es consistente con la lógica del método Ward, cuyo criterio de fusión minimiza la varianza interna en cada etapa del proceso de agrupamiento.
+
+Desde el punto de vista sustantivo, una mayor homogeneidad interna sugiere que los territorios agrupados comparten perfiles socioeconómicos más cercanos, lo que facilita la interpretación de patrones estructurales. Por ejemplo, en Educación y Etnia —donde las diferencias entre métodos son más pronunciadas— el clustering jerárquico logra distinguir con mayor precisión territorios con rezagos estructurales frente a aquellos con mejores indicadores sociales.
+
+En dimensiones como TICs y Servicios, las diferencias entre métodos son menores, lo que sugiere que estas variables presentan patrones territoriales relativamente claros y consistentes independientemente del algoritmo utilizado. Por su parte, la dimensión laboral muestra resultados estables entre métodos, indicando que los perfiles ocupacionales constituyen una base robusta de diferenciación territorial.
+
+Implicancias analíticas:
+
+La compacidad de los clusters tiene implicancias metodológicas y sustantivas relevantes. Grupos más homogéneos permiten caracterizar perfiles territoriales más definidos y facilitan la interpretación comparativa entre clusters. Sin embargo, una excesiva homogeneidad también puede implicar una fragmentación excesiva del espacio territorial, generando clusters muy específicos pero menos generalizables.
+
+En contexto de construcción de tipologías territoriales —como el presente trabajo— no sólo interesa la homogeneidad interna, sino también la **capacidad del método para producir grupos estables, interpretables y replicables**. Por ello, la evaluación de la varianza intra-cluster debe complementarse con criterios de estabilidad, asignación directa y claridad interpretativa.
+
+Si bien el método jerárquico de Ward produce clusters más compactos en términos de varianza interna, el algoritmo K-means resulta más adecuado para la construcción de la tipología final de municipios. En primer lugar, K-means permite una asignación directa y reproducible de cada unidad a un cluster específico, facilitando la actualización futura del análisis ante nuevos datos. En segundo lugar, los resultados obtenidos mediante ambos métodos muestran patrones de diferenciación territorial similares, lo que indica que la estructura general de los grupos es robusta y no depende exclusivamente del algoritmo utilizado.
+
+Asimismo, K-means ofrece centroides claramente definidos que representan perfiles promedio de cada cluster, lo que favorece la caracterización sustantiva de los grupos y su interpretación en términos de políticas públicas. En este sentido, la elección de K-means no implica descartar el método jerárquico, sino utilizarlo como estrategia complementaria de validación y contraste metodológico.
+
+```{r}
+scores_educacion <- c("educacion_nivel")
+
+scores_laboral <- c(
+  "laboral_desempeno",
+  "laboral_participacion",
+  "laboral_empleo_publico"
+)
+
+scores_servicios <- c(
+  "servicios_acceso_general",
+  "servicios_composicion"
+)
+
+scores_tics <- c(
+  "tics_acceso_general",
+  "tics_tipo_acceso"
+)
+
+scores_etnia <- c(
+  "etnia_presencia",
+  "etnia_composicion"
+)
+
+
+# Distancia euclídea
+distancias <- dist(matriz_clustering_scaled, method = "euclidean")
+
+# Clustering jerárquico (Ward)
+hclust_ward <- hclust(distancias, method = "ward.D2")
+
+# Cortamos en k = 6 (mismo k que k-means)
+base_perfiles <- base_perfiles %>%
+  mutate(cluster_hclust = factor(cutree(hclust_ward, k = 6)))
+
+var_intra <- function(data, cluster_var, vars_dimension) {
+  data %>%
+    group_by(.data[[cluster_var]]) %>%
+    summarise(
+      across(
+        all_of(vars_dimension),
+        ~ var(.x, na.rm = TRUE)
+      ),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      var_intra_media = rowMeans(
+        select(., all_of(vars_dimension)),
+        na.rm = TRUE
+      )
+    )
+}
+
+################ K-means
+
+var_educ_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_educacion)
+var_laboral_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_laboral)
+var_servicios_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_servicios)
+var_tics_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_tics)
+var_etnia_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_etnia)
+
+
+###################### Jerarquico
+
+var_educ_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_educacion)
+var_laboral_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_laboral)
+var_servicios_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_servicios)
+var_tics_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_tics)
+var_etnia_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_etnia)
+
+#################### Tabla comparativa
+
+tabla_varianza <- bind_rows(
+  var_educ_kmeans %>% mutate(dimension = "Educación", metodo = "K-means"),
+  var_laboral_kmeans %>% mutate(dimension = "Laboral", metodo = "K-means"),
+  var_servicios_kmeans %>% mutate(dimension = "Servicios", metodo = "K-means"),
+  var_tics_kmeans %>% mutate(dimension = "TICs", metodo = "K-means"),
+  var_etnia_kmeans %>% mutate(dimension = "Etnia", metodo = "K-means"),
+
+  var_educ_hclust %>% mutate(dimension = "Educación", metodo = "Jerárquico (Ward)"),
+  var_laboral_hclust %>% mutate(dimension = "Laboral", metodo = "Jerárquico (Ward)"),
+  var_servicios_hclust %>% mutate(dimension = "Servicios", metodo = "Jerárquico (Ward)"),
+  var_tics_hclust %>% mutate(dimension = "TICs", metodo = "Jerárquico (Ward)"),
+  var_etnia_hclust %>% mutate(dimension = "Etnia", metodo = "Jerárquico (Ward)")
+) %>%
+  group_by(dimension, metodo) %>%
+  summarise(
+    var_intra_media = mean(var_intra_media, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+DT::datatable(
+  tabla_varianza,
+  rownames = FALSE,
+  options = list(
+    dom = "t",
+    pageLength = 10
+  ),
+  caption = "Varianza intra-cluster media por dimensión y método de clustering"
+)
+
+ggplot(tabla_varianza,
+       aes(x = dimension, y = var_intra_media, fill = metodo)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Comparación de varianza intra-cluster por dimensión",
+    x = "",
+    y = "Varianza intra-cluster media",
+    fill = "Método"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.5 Caracterización de los Clusters Municipales
+
+Los valores corresponden a **scores estandarizados de PCA**. Valores positivos indican desempeño relativo superior al promedio nacional; valores negativos, rezagos estructurales. La tipología resultante permite identificar **patrones territoriales diferenciados de desarrollo, rezago y heterogeneidad estructural**, integrando dimensiones educativas, laborales, infraestructurales, tecnológicas y étnicas. Al combinar técnicas no supervisadas con validación cruzada entre métodos, el análisis logra un equilibrio entre rigor estadístico y utilidad analítica para el diseño de políticas públicas territoriales.
+
+### Comparación de centroides entre K-means y Ward
+
+La comparación de centroides consiste en analizar los valores promedio de las variables o componentes principales dentro de cada cluster. Cada centroide representa el perfil socioeconómico típico de los municipios que integran el grupo. Al comparar los centroides obtenidos mediante K-means y clustering jerárquico, es posible evaluar si ambos métodos generan tipologías territoriales similares o si producen perfiles sustancialmente distintos.
+
+Este análisis permite validar la estabilidad sustantiva de los clusters: si los perfiles promedio son comparables entre métodos, se refuerza la robustez de la clasificación territorial. Asimismo, la comparación de centroides facilita la interpretación sustantiva de los grupos, ya que permite identificar qué dimensiones presentan valores altos o bajos en cada cluster y construir perfiles tipo de municipios.
+
+La comparación con el clustering jerárquico muestra que los **perfiles promedio son altamente consistentes entre métodos**, especialmente en los clusters 3 y 6, que emergen como tipologías robustas independientemente del algoritmo utilizado. Las diferencias observadas se explican principalmente por la mayor compacidad interna de Ward, que tiende a producir grupos más homogéneos, pero sin alterar sustantivamente el contenido de los perfiles.
+
+Esto refuerza la validez de la tipología construida mediante K-means, al tiempo que justifica su uso como clasificación final por su mayor flexibilidad operativa.
+
+```{r}
+# ------------------------------------------------------
+# 1. VARIABLES DE SCORES PCA UTILIZADAS EN CLUSTERING
+# ------------------------------------------------------
+
+vars_scores <- c(
+  "educacion_nivel",
+  "laboral_desempeno",
+  "laboral_participacion",
+  "laboral_empleo_publico",
+  "servicios_acceso_general",
+  "servicios_composicion",
+  "tics_acceso_general",
+  "tics_tipo_acceso",
+  "etnia_presencia",
+  "etnia_composicion"
+)
+
+# ------------------------------------------------------
+# 2. CENTROIDES KMEANS
+# ------------------------------------------------------
+
+centroides_kmeans <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    across(all_of(vars_scores), mean, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(metodo = "K-means") %>%
+  rename(cluster = cluster_kmeans)
+
+# ------------------------------------------------------
+# 3. CENTROIDES JERARQUICOS (WARD)
+# ------------------------------------------------------
+
+centroides_ward <- base_perfiles %>%
+  group_by(cluster_hclust) %>%
+  summarise(
+    across(all_of(vars_scores), mean, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(metodo = "Jerárquico (Ward)") %>%
+  rename(cluster = cluster_hclust)
+
+# ------------------------------------------------------
+# 4. TABLA COMPARATIVA FINAL
+# ------------------------------------------------------
+
+tabla_centroides <- bind_rows(
+  centroides_kmeans,
+  centroides_ward
+)
+
+print(tabla_centroides)
+
+# ------------------------------------------------------
+# 5. FORMATO LARGO PARA GRAFICO
+# ------------------------------------------------------
+
+tabla_long <- tabla_centroides %>%
+  pivot_longer(
+    cols = all_of(vars_scores),
+    names_to = "dimension",
+    values_to = "valor"
+  )
+
+# ------------------------------------------------------
+# 6. GRAFICO COMPARATIVO DE PERFILES PROMEDIO
+# ------------------------------------------------------
+
+ggplot(tabla_long,
+       aes(x = dimension,
+           y = valor,
+           fill = metodo)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~cluster) +
+  coord_flip() +
+  labs(
+    title = "Comparación de Perfiles Promedio por Cluster",
+    x = "Dimensión",
+    y = "Score promedio"
+  ) +
+  theme_minimal()
+
+```
+
+### Cluster 1 – Municipios con fuerte acceso a servicios, pero debilidad laboral
+
+Este cluster se caracteriza por un **alto nivel de acceso general a servicios básicos**, especialmente en agua, saneamiento y electricidad, así como una composición relativamente favorable de estos servicios. Sin embargo, este buen desempeño infraestructural convive con **rezagos marcados en el mercado de trabajo**, particularmente en el desempeño laboral y en la participación del empleo público.
+
+En términos educativos, el nivel es levemente superior al promedio, aunque no constituye una fortaleza central. La dimensión TIC muestra un acceso cercano a la media, con cierta ventaja en el tipo de acceso más que en la cobertura general.
+
+Estos municipios pueden interpretarse como territorios con **infraestructura consolidada**, pero con **problemas estructurales de inserción laboral**, lo que sugiere una desconexión entre el acceso a servicios y las oportunidades económicas locales.
+
+### Cluster 2 – Municipios con buen desempeño laboral y educativo, pero heterogeneidad participativa
+
+El segundo cluster presenta un **alto nivel educativo** y un **muy buen desempeño laboral**, destacándose por bajas tasas de desempleo y una inserción laboral relativamente sólida. El acceso a servicios y TICs también es positivo, aunque menos dominante que en otros perfiles.
+
+Sin embargo, se observa cierta **heterogeneidad en la participación laboral**, lo que sugiere que los buenos indicadores de empleo no se distribuyen de manera homogénea entre la población activa.
+
+Este perfil corresponde a municipios con **estructuras socioeconómicas relativamente dinámicas**, que combinan capital humano elevado con mercados de trabajo funcionales, aunque con desigualdades internas que matizan ese buen desempeño general.
+
+### Cluster 3 – Municipios de alto desarrollo estructural y fuerte diferenciación socioterritorial
+
+Este cluster exhibe los **valores más altos en educación, acceso a servicios y acceso general a TICs**, posicionándose claramente por encima del promedio nacional. A su vez, presenta una **alta presencia de empleo público**, lo que sugiere un rol importante del Estado en la estructura ocupacional local.
+
+No obstante, este alto desarrollo convive con una **baja participación laboral** y una fuerte diferenciación en la dimensión étnica, tanto en presencia como en composición. Esto indica territorios con **estructuras complejas**, donde el desarrollo material no necesariamente se traduce en inclusión laboral plena.
+
+Se trata de municipios con **altas capacidades institucionales y de infraestructura**, pero con tensiones internas asociadas a desigualdades sociales persistentes.
+
+### Cluster 4 – Municipios de desempeño intermedio con buen acceso a TICs y servicios
+
+El cuarto cluster se caracteriza por un **buen nivel educativo** y un acceso relativamente alto tanto a servicios como a TICs. Sin embargo, la **participación laboral es baja**, y el desempeño laboral general se mantiene apenas por encima del promedio.
+
+Este perfil refleja municipios con **condiciones estructurales razonables**, pero sin un mercado de trabajo dinámico que aproveche plenamente ese capital social y tecnológico. La presencia étnica es moderada y no constituye un rasgo distintivo central.
+
+Son territorios que podrían beneficiarse de políticas orientadas a **articular infraestructura y capital humano con estrategias de desarrollo productivo local**.
+
+### Cluster 5 – Municipios con rezagos estructurales múltiples
+
+Este cluster concentra municipios con **bajo nivel educativo**, **débil acceso a servicios básicos** y **limitado acceso a TICs**. Aunque la participación laboral aparece relativamente alta, el desempeño laboral general es bajo, lo que sugiere **inserciones laborales precarias o de baja calidad**.
+
+La composición étnica no presenta extremos, pero se inserta en un contexto general de rezago estructural. Este perfil refleja territorios con **carencias múltiples**, donde las limitaciones educativas, infraestructurales y tecnológicas se refuerzan mutuamente.
+
+Desde una perspectiva de política pública, estos municipios requieren **intervenciones integrales**, priorizando el acceso a servicios, educación y conectividad como condiciones básicas para el desarrollo.
+
+### Cluster 6 – Municipios con fuerte especificidad étnica y aislamiento estructural
+
+El sexto cluster presenta un perfil claramente diferenciado, con **valores extremadamente bajos en las dimensiones étnicas**, lo que indica una fuerte concentración o particularidad en la composición poblacional. A su vez, muestra **desempeños bajos en participación y empleo**, junto con niveles moderados de acceso a servicios y TICs.
+
+Este patrón sugiere municipios con **alta especificidad sociocultural**, probablemente pequeños o rurales, donde las dinámicas económicas y laborales están fuertemente condicionadas por factores estructurales y territoriales.
+
+Se trata de territorios que requieren **políticas focalizadas y culturalmente pertinentes**, ya que los instrumentos estándar de desarrollo pueden resultar insuficientes o inadecuados.
+
+```{r}
+# ======================================================
+# FASE 5 – VALIDACIÓN E INTERPRETACIÓN CON RANDOM FOREST
+# ======================================================
+
+library(randomForest)
+
+# ------------------------------------------------------
+# 1. Preparamos la base para RF
+#    - Variable dependiente: cluster_kmeans
+#    - Predictoras: scores PCA (mismas que en clustering)
+# ------------------------------------------------------
+
+rf_data <- base_perfiles %>%
+  select(
+    cluster_kmeans,
+    educacion_nivel,
+    laboral_desempeno,
+    laboral_participacion,
+    laboral_empleo_publico,
+    servicios_acceso_general,
+    servicios_composicion,
+    tics_acceso_general,
+    tics_tipo_acceso,
+    etnia_presencia,
+    etnia_composicion
+  ) %>%
+  drop_na()
+
+rf_data$cluster_kmeans <- as.factor(rf_data$cluster_kmeans)
+
+# ------------------------------------------------------
+# 2. Ajuste del modelo Random Forest
+# ------------------------------------------------------
+
+set.seed(123)
+
+rf_model <- randomForest(
+  cluster_kmeans ~ .,
+  data = rf_data,
+  importance = TRUE,
+  ntree = 500
+)
+
+# ------------------------------------------------------
+# 3. Importancia de variables – Mean Decrease Gini
+# ------------------------------------------------------
+
+importancia_rf <- importance(rf_model, type = 2) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("dimension") %>%
+  arrange(desc(MeanDecreaseGini))
+
+importancia_rf
+
+# ------------------------------------------------------
+# 4. Gráfico de importancia
+# ------------------------------------------------------
+
+ggplot(importancia_rf,
+       aes(x = reorder(dimension, MeanDecreaseGini),
+           y = MeanDecreaseGini)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Importancia de dimensiones en la clasificación de clusters",
+    subtitle = "Random Forest – Mean Decrease Gini",
+    x = "",
+    y = "Mean Decrease Gini"
+  ) +
+  theme_minimal()
+
+# ------------------------------------------------------
+# 5. Chequeo territorial: Urbano / Rural por cluster
+# ------------------------------------------------------
+
+urbano_cluster <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    proporcion_urbano = mean(urbano, na.rm = TRUE),
+    poblacion_promedio = mean(poblacion, na.rm = TRUE),
+    n_municipios = n(),
+    .groups = "drop"
+  )
+
+urbano_cluster
+
+# ------------------------------------------------------
+# 6. Visualización urbano / rural
+# ------------------------------------------------------
+
+ggplot(urbano_cluster,
+       aes(x = cluster_kmeans, y = proporcion_urbano)) +
+  geom_col(fill = "darkorange") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Composición urbano-rural por cluster",
+    x = "Cluster",
+    y = "Proporción de municipios urbanos"
+  ) +
+  theme_minimal()
+
 ```
