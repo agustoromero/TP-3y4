@@ -111,7 +111,7 @@ base_sin_na <- base_sin_na %>%
 
 summary(base_sin_na)
 dicc_atlas_clasif <- read_excel(
-  "data/dicc_atlas_jurisdiccion/dicc_atlas_clasif.xlsx"
+  "data/dicc_atlas_jurisdiccion/dicc_atlas_clasif.xlsx",
   vars_demografica <- dicc_atlas_clasif %>%
     filter(dimension == "demografica") %>%
     pull(variable)
@@ -431,5 +431,299 @@ perfiles_clusters %>%
     fill = "Cluster",
     x = "",
     y = "Score promedio (PCA)"
+  ) +
+  theme_minimal()
+
+
+scores_educacion <- c("educacion_nivel")
+
+scores_laboral <- c(
+  "laboral_desempeno",
+  "laboral_participacion",
+  "laboral_empleo_publico"
+)
+
+scores_servicios <- c(
+  "servicios_acceso_general",
+  "servicios_composicion"
+)
+
+scores_tics <- c(
+  "tics_acceso_general",
+  "tics_tipo_acceso"
+)
+
+scores_etnia <- c(
+  "etnia_presencia",
+  "etnia_composicion"
+)
+
+
+# Distancia euclídea
+distancias <- dist(matriz_clustering_scaled, method = "euclidean")
+
+# Clustering jerárquico (Ward)
+hclust_ward <- hclust(distancias, method = "ward.D2")
+
+# Cortamos en k = 6 (mismo k que k-means)
+base_perfiles <- base_perfiles %>%
+  mutate(cluster_hclust = factor(cutree(hclust_ward, k = 6)))
+
+var_intra <- function(data, cluster_var, vars_dimension) {
+  data %>%
+    group_by(.data[[cluster_var]]) %>%
+    summarise(
+      across(
+        all_of(vars_dimension),
+        ~ var(.x, na.rm = TRUE)
+      ),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      var_intra_media = rowMeans(
+        select(., all_of(vars_dimension)),
+        na.rm = TRUE
+      )
+    )
+}
+
+################ K-means
+
+var_educ_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_educacion)
+var_laboral_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_laboral)
+var_servicios_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_servicios)
+var_tics_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_tics)
+var_etnia_kmeans <- var_intra(base_perfiles, "cluster_kmeans", scores_etnia)
+
+
+###################### Jerarquico
+
+var_educ_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_educacion)
+var_laboral_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_laboral)
+var_servicios_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_servicios)
+var_tics_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_tics)
+var_etnia_hclust <- var_intra(base_perfiles, "cluster_hclust", scores_etnia)
+
+#################### Tabla comparativa
+
+tabla_varianza <- bind_rows(
+  var_educ_kmeans %>% mutate(dimension = "Educación", metodo = "K-means"),
+  var_laboral_kmeans %>% mutate(dimension = "Laboral", metodo = "K-means"),
+  var_servicios_kmeans %>% mutate(dimension = "Servicios", metodo = "K-means"),
+  var_tics_kmeans %>% mutate(dimension = "TICs", metodo = "K-means"),
+  var_etnia_kmeans %>% mutate(dimension = "Etnia", metodo = "K-means"),
+  
+  var_educ_hclust %>% mutate(dimension = "Educación", metodo = "Jerárquico (Ward)"),
+  var_laboral_hclust %>% mutate(dimension = "Laboral", metodo = "Jerárquico (Ward)"),
+  var_servicios_hclust %>% mutate(dimension = "Servicios", metodo = "Jerárquico (Ward)"),
+  var_tics_hclust %>% mutate(dimension = "TICs", metodo = "Jerárquico (Ward)"),
+  var_etnia_hclust %>% mutate(dimension = "Etnia", metodo = "Jerárquico (Ward)")
+) %>%
+  group_by(dimension, metodo) %>%
+  summarise(
+    var_intra_media = mean(var_intra_media, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+DT::datatable(
+  tabla_varianza,
+  rownames = FALSE,
+  options = list(
+    dom = "t",
+    pageLength = 10
+  ),
+  caption = "Varianza intra-cluster media por dimensión y método de clustering"
+)
+
+ggplot(tabla_varianza,
+       aes(x = dimension, y = var_intra_media, fill = metodo)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Comparación de varianza intra-cluster por dimensión",
+    x = "",
+    y = "Varianza intra-cluster media",
+    fill = "Método"
+  ) +
+  theme_minimal()
+
+# ------------------------------------------------------
+# 1. VARIABLES DE SCORES PCA UTILIZADAS EN CLUSTERING
+# ------------------------------------------------------
+
+vars_scores <- c(
+  "educacion_nivel",
+  "laboral_desempeno",
+  "laboral_participacion",
+  "laboral_empleo_publico",
+  "servicios_acceso_general",
+  "servicios_composicion",
+  "tics_acceso_general",
+  "tics_tipo_acceso",
+  "etnia_presencia",
+  "etnia_composicion"
+)
+
+# ------------------------------------------------------
+# 2. CENTROIDES KMEANS
+# ------------------------------------------------------
+
+centroides_kmeans <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    across(all_of(vars_scores), mean, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(metodo = "K-means") %>%
+  rename(cluster = cluster_kmeans)
+
+# ------------------------------------------------------
+# 3. CENTROIDES JERARQUICOS
+# ------------------------------------------------------
+
+centroides_ward <- base_perfiles %>%
+  group_by(cluster_hclust) %>%
+  summarise(
+    across(all_of(vars_scores), mean, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(metodo = "Jerárquico") %>%
+  rename(cluster = cluster_hclust)
+
+# ------------------------------------------------------
+# 4. TABLA COMPARATIVA FINAL
+# ------------------------------------------------------
+
+tabla_centroides <- bind_rows(
+  centroides_kmeans,
+  centroides_ward
+)
+
+print(tabla_centroides)
+
+# ------------------------------------------------------
+# 5. FORMATO LARGO PARA GRAFICO
+# ------------------------------------------------------
+
+tabla_long <- tabla_centroides %>%
+  pivot_longer(
+    cols = all_of(vars_scores),
+    names_to = "dimension",
+    values_to = "valor"
+  )
+
+# ------------------------------------------------------
+# 6. GRAFICO COMPARATIVO DE PERFILES PROMEDIO
+# ------------------------------------------------------
+
+ggplot(tabla_long,
+       aes(x = dimension,
+           y = valor,
+           fill = metodo)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~cluster) +
+  coord_flip() +
+  labs(
+    title = "Comparación de Perfiles Promedio por Cluster",
+    x = "Dimensión",
+    y = "Score promedio"
+  ) +
+  theme_minimal()
+
+# ======================================================
+# FASE 5 – VALIDACIÓN E INTERPRETACIÓN CON RANDOM FOREST
+# ======================================================
+
+# ------------------------------------------------------
+# 1. Preparamos la base para RF
+#    - Variable dependiente: cluster_kmeans
+#    - Predictoras: scores PCA (mismas que en clustering)
+# ------------------------------------------------------
+
+rf_data <- base_perfiles %>%
+  select(
+    cluster_kmeans,
+    educacion_nivel,
+    laboral_desempeno,
+    laboral_participacion,
+    laboral_empleo_publico,
+    servicios_acceso_general,
+    servicios_composicion,
+    tics_acceso_general,
+    tics_tipo_acceso,
+    etnia_presencia,
+    etnia_composicion
+  ) %>%
+  drop_na()
+
+rf_data$cluster_kmeans <- as.factor(rf_data$cluster_kmeans)
+
+# ------------------------------------------------------
+# 2. Ajuste del modelo Random Forest
+# ------------------------------------------------------
+
+set.seed(123)
+
+rf_model <- randomForest(
+  cluster_kmeans ~ .,
+  data = rf_data,
+  importance = TRUE,
+  ntree = 500
+)
+
+# ------------------------------------------------------
+# 3. Importancia de variables – Mean Decrease Gini
+# ------------------------------------------------------
+
+importancia_rf <- importance(rf_model, type = 2) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("dimension") %>%
+  arrange(desc(MeanDecreaseGini))
+
+importancia_rf
+
+# ------------------------------------------------------
+# 4. Gráfico de importancia
+# ------------------------------------------------------
+
+ggplot(importancia_rf,
+       aes(x = reorder(dimension, MeanDecreaseGini),
+           y = MeanDecreaseGini)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Importancia de dimensiones en la clasificación de clusters",
+    subtitle = "Random Forest – Mean Decrease Gini",
+    x = "",
+    y = "Mean Decrease Gini"
+  ) +
+  theme_minimal()
+
+# ------------------------------------------------------
+# 5. Chequeo territorial: Urbano / Rural por cluster
+# ------------------------------------------------------
+
+urbano_cluster <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    proporcion_urbano = mean(urbano, na.rm = TRUE),
+    poblacion_promedio = mean(poblacion, na.rm = TRUE),
+    n_municipios = n(),
+    .groups = "drop"
+  )
+
+urbano_cluster
+
+# ------------------------------------------------------
+# 6. Visualización urbano / rural
+# ------------------------------------------------------
+
+ggplot(urbano_cluster,
+       aes(x = cluster_kmeans, y = proporcion_urbano)) +
+  geom_col(fill = "darkorange") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Composición urbano-rural por cluster",
+    x = "Cluster",
+    y = "Proporción de municipios urbanos"
   ) +
   theme_minimal()

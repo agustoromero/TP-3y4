@@ -61,6 +61,8 @@ library(writexl)
 library(ggplot2)
 library(cluster)
 library(tidyverse)
+library(randomForest)
+
 
 #set general de chunks
 knitr::opts_chunk$set(echo = TRUE)
@@ -170,6 +172,8 @@ base_sin_na <- base_sin_na %>%
   )
 
 summary(base_sin_na)
+
+
 ```
 
 ## 1.2 Tamaño poblacional y heterogeneidad territorial
@@ -344,6 +348,16 @@ vars_excluir_pca <- c("poblacion", vars_tamano)
 Una vez definidas las dimensiones conceptuales, se procede a la delimitación del universo analítico que será utilizado en las técnicas multivariadas. Dado que el PCA y los métodos de clustering requieren matrices completas, se opta por restringir el análisis a aquellas unidades territoriales con información disponible en todas las variables sustantivas seleccionadas, en este caso la restricción ya fue realizada previamente. La estrategia que combina una **definición conceptual ex ante** clara de dimensiones, y una **preparación estadística controlada** del universo analítico, con la preservación de la mayor cantidad posible de información sustantiva; habilita avanzar hacia una etapa de reducción de dimensionalidad mediante PCA **por dimensiones**, permitiendo interpretar los componentes principales como síntesis internas de cada ámbito analítico, antes de integrar los resultados en una tipología territorial más general.
 
 ```{r}
+
+vars_pca <- c(
+  vars_demografica,
+  vars_educacion,
+  vars_laboral,
+  vars_servicios,
+  vars_etnia,
+  vars_tics
+)
+
 base_pca <- base_sin_na %>%
   select(all_of(c("codigo_unico", vars_pca))) %>%
   drop_na()
@@ -483,7 +497,7 @@ pca_servicios$rotation
 
 Resultados e interpretación de la varianza:
 
-El PCA muestra un primer componente (PC1) que explica el **61,7% de la varianza**, seguido por un segundo componente (PC2) con **18,2%**. Los componentes restantes aportan variabilidad adicional, pero de menor relevancia sustantiva. El **PC1** se interpreta como un eje de **acceso general a servicios básicos**, ya que todas las variables (agua mejorada, saneamiento, electricidad y recolección de residuos) presentan cargas elevadas y del mismo signo. Este componente sintetiza un fenómeno de infraestructura básica integral: los municipios se ordenan según su nivel global de cobertura de servicios esenciales. Dado el signo negativo de las cargas, valores más bajos del score indican mayor acceso, por lo que resulta conveniente invertir el índice para una lectura directa. El **PC2** introduce una diferenciación entre tipos de servicios, particularmente entre electricidad y agua/saneamiento. Este componente no representa un gradiente de acceso general, sino un **perfil diferencial de cobertura**, útil únicamente si se desea distinguir municipios con patrones específicos de provisión de servicios. Dado que interesa **tipologías de provisión de servicios**, PC2 **vale la pena**
+El PCA muestra un primer componente (PC1) que explica el **61,7% de la varianza**, seguido por un segundo componente (PC2) con **18,2%**. Los componentes restantes aportan variabilidad adicional, pero de menor relevancia sustantiva. El **PC1** se interpreta como un eje de **acceso general a servicios básicos**, ya que todas las variables (agua mejorada, saneamiento, electricidad y recolección de residuos) presentan cargas elevadas y del mismo signo. Este componente sintetiza un fenómeno de infraestructura básica integral: los municipios se ordenan según su nivel global de cobertura de servicios esenciales. Dado el signo negativo de las cargas, valores más bajos del score indican mayor acceso, por lo que resulta conveniente invertir el índice para una lectura directa. El **PC2** introduce una diferenciación entre tipos de servicios, particularmente entre electricidad y agua/saneamiento. Este componente no representa un gradiente de acceso general, sino un **perfil diferencial de cobertura**, útil únicamente si se desea distinguir municipios con patrones específicos de provisión de servicios. Dado que interesa **tipologías de provisión de servicios**, PC2 **vale la pena.**
 
 ## 3.5 PCA – Dimensión TIC
 
@@ -585,7 +599,7 @@ colnames(scores_etnia) <- c(
 # Base final de perfiles
 # -----------------------------
 
-base_perfiles <- base_pca %>%
+base_perfiles <- base_sin_na %>%
   select(
     codigo_unico,
     poblacion,
@@ -602,6 +616,25 @@ base_perfiles <- base_pca %>%
 
 # Chequeo rápido
 head(base_perfiles)
+
+# ======================================================
+# TABLA 1 – RESUMEN GENERAL DE LA BASE FINAL
+# ======================================================
+
+resumen_base <- base_perfiles %>%
+  summarise(
+    n_municipios = n(),
+    poblacion_total = sum(poblacion, na.rm = TRUE),
+    poblacion_promedio = mean(poblacion, na.rm = TRUE),
+    poblacion_mediana = median(poblacion, na.rm = TRUE),
+    proporcion_urbana = mean(urbano, na.rm = TRUE)
+  )
+
+write_xlsx(
+  resumen_base,
+  "outputs/tablas/01_resumen_base.xlsx"
+)
+
 ```
 
 # 4. Fase de Aprendizaje No Supervisado y Caracterización Municipal
@@ -772,6 +805,22 @@ base_perfiles %>%
     prop_urbano = mean(urbano, na.rm = TRUE)
   )
 
+# ======================================================
+# TABLA 5 – TAMAÑO DE CLUSTERS
+# ======================================================
+
+tamano_clusters <- base_perfiles %>%
+  count(cluster_kmeans) %>%
+  mutate(
+    porcentaje = n / sum(n)
+  )
+
+write_xlsx(
+  tamano_clusters,
+  "outputs/tablas/05_tamano_clusters.xlsx"
+)
+##########################
+
 
 #grafico
 perfiles_clusters %>%
@@ -790,6 +839,16 @@ perfiles_clusters %>%
     y = "Score promedio (PCA)"
   ) +
   theme_minimal()
+
+# ======================================================
+# TABLA 2 – PERFILES PROMEDIO KMEANS
+# ======================================================
+
+write_xlsx(
+  perfiles_clusters,
+  "outputs/tablas/02_perfiles_clusters_kmeans.xlsx"
+)
+
 
 ```
 
@@ -903,6 +962,16 @@ tabla_varianza <- bind_rows(
     var_intra_media = mean(var_intra_media, na.rm = TRUE),
     .groups = "drop"
   )
+# ======================================================
+# TABLA 3 – VARIANZA INTRA CLUSTER
+# ======================================================
+
+write_xlsx(
+  tabla_varianza,
+  "outputs/tablas/03_varianza_intra_cluster.xlsx"
+)
+########################
+
 
 DT::datatable(
   tabla_varianza,
@@ -931,7 +1000,7 @@ ggplot(tabla_varianza,
 
 Los valores corresponden a **scores estandarizados de PCA**. Valores positivos indican desempeño relativo superior al promedio nacional; valores negativos, rezagos estructurales. La tipología resultante permite identificar **patrones territoriales diferenciados de desarrollo, rezago y heterogeneidad estructural**, integrando dimensiones educativas, laborales, infraestructurales, tecnológicas y étnicas. Al combinar técnicas no supervisadas con validación cruzada entre métodos, el análisis logra un equilibrio entre rigor estadístico y utilidad analítica para el diseño de políticas públicas territoriales.
 
-### Comparación de centroides entre K-means y Ward
+### Comparación de centroides entre K-means y Jerárquico
 
 La comparación de centroides consiste en analizar los valores promedio de las variables o componentes principales dentro de cada cluster. Cada centroide representa el perfil socioeconómico típico de los municipios que integran el grupo. Al comparar los centroides obtenidos mediante K-means y clustering jerárquico, es posible evaluar si ambos métodos generan tipologías territoriales similares o si producen perfiles sustancialmente distintos.
 
@@ -973,16 +1042,16 @@ centroides_kmeans <- base_perfiles %>%
   rename(cluster = cluster_kmeans)
 
 # ------------------------------------------------------
-# 3. CENTROIDES JERARQUICOS (WARD)
+# 3. CENTROIDES JERARQUICOS
 # ------------------------------------------------------
 
-centroides_ward <- base_perfiles %>%
+centroides_jerarq <- base_perfiles %>%
   group_by(cluster_hclust) %>%
   summarise(
     across(all_of(vars_scores), mean, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(metodo = "Jerárquico (Ward)") %>%
+  mutate(metodo = "Jerárquico") %>%
   rename(cluster = cluster_hclust)
 
 # ------------------------------------------------------
@@ -991,10 +1060,21 @@ centroides_ward <- base_perfiles %>%
 
 tabla_centroides <- bind_rows(
   centroides_kmeans,
-  centroides_ward
+  centroides_jerarq
 )
 
 print(tabla_centroides)
+
+# ======================================================
+# TABLA 4 – CENTROIDES COMPARADOS
+# ======================================================
+
+write_xlsx(
+  tabla_centroides,
+  "outputs/tablas/04_centroides_comparados.xlsx"
+)
+
+
 
 # ------------------------------------------------------
 # 5. FORMATO LARGO PARA GRAFICO
@@ -1025,6 +1105,44 @@ ggplot(tabla_long,
   ) +
   theme_minimal()
 
+
+# ------------------------------------------------------
+# 7. Chequeo territorial: Urbano / Rural por cluster
+# ------------------------------------------------------
+
+urbano_cluster <- base_perfiles %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    proporcion_urbano = mean(urbano, na.rm = TRUE),
+    poblacion_promedio = mean(poblacion, na.rm = TRUE),
+    n_municipios = n(),
+    .groups = "drop"
+  )
+
+urbano_cluster
+# ======================================================
+# TABLA 7 – COMPOSICIÓN URBANO RURAL
+# ======================================================
+
+write_xlsx(
+  urbano_cluster,
+  "outputs/tablas/07_composicion_urbano_cluster.xlsx"
+)
+
+# ------------------------------------------------------
+# 8. Visualización urbano / rural
+# ------------------------------------------------------
+
+ggplot(urbano_cluster,
+       aes(x = cluster_kmeans, y = proporcion_urbano)) +
+  geom_col(fill = "darkorange") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Composición urbano-rural por cluster",
+    x = "Cluster",
+    y = "Proporción de municipios urbanos"
+  ) +
+  theme_minimal()
 ```
 
 ### Cluster 1 – Municipios con fuerte acceso a servicios, pero debilidad laboral
@@ -1037,7 +1155,7 @@ Estos municipios pueden interpretarse como territorios con **infraestructura con
 
 ### Cluster 2 – Municipios con buen desempeño laboral y educativo, pero heterogeneidad participativa
 
-El segundo cluster presenta un **alto nivel educativo** y un **muy buen desempeño laboral**, destacándose por bajas tasas de desempleo y una inserción laboral relativamente sólida. El acceso a servicios y TICs también es positivo, aunque menos dominante que en otros perfiles.
+El segundo cluster (191 municipios), con población promedio de 5.230 habitantes y moderada poblacion urbana, presenta un **alto nivel educativo** y un **muy buen desempeño laboral**, destacándose por bajas tasas de desempleo y una inserción laboral relativamente sólida. El acceso a servicios y TICs también es positivo, aunque menos dominante que en otros perfiles.
 
 Sin embargo, se observa cierta **heterogeneidad en la participación laboral**, lo que sugiere que los buenos indicadores de empleo no se distribuyen de manera homogénea entre la población activa.
 
@@ -1045,7 +1163,7 @@ Este perfil corresponde a municipios con **estructuras socioeconómicas relativa
 
 ### Cluster 3 – Municipios de alto desarrollo estructural y fuerte diferenciación socioterritorial
 
-Este cluster exhibe los **valores más altos en educación, acceso a servicios y acceso general a TICs**, posicionándose claramente por encima del promedio nacional. A su vez, presenta una **alta presencia de empleo público**, lo que sugiere un rol importante del Estado en la estructura ocupacional local.
+Este cluster (105 municipios), con población promedio baja, de 1.979 habitantes y sin urbanización significativa, undefinedexhibe los **valores más altos en educación, acceso a servicios y acceso general a TICs**, posicionándose claramente por encima del promedio nacional. A su vez, presenta una **alta presencia de empleo público**, lo que sugiere un rol importante del Estado en la estructura ocupacional local.
 
 No obstante, este alto desarrollo convive con una **baja participación laboral** y una fuerte diferenciación en la dimensión étnica, tanto en presencia como en composición. Esto indica territorios con **estructuras complejas**, donde el desarrollo material no necesariamente se traduce en inclusión laboral plena.
 
@@ -1053,7 +1171,7 @@ Se trata de municipios con **altas capacidades institucionales y de infraestruct
 
 ### Cluster 4 – Municipios de desempeño intermedio con buen acceso a TICs y servicios
 
-El cuarto cluster se caracteriza por un **buen nivel educativo** y un acceso relativamente alto tanto a servicios como a TICs. Sin embargo, la **participación laboral es baja**, y el desempeño laboral general se mantiene apenas por encima del promedio.
+El cuarto cluster (502 municipios) con población promedio de 5.632 habitantes y baja población urbana, se caracteriza por un **buen nivel educativo** y un acceso relativamente alto tanto a servicios como a TICs. Sin embargo, la **participación laboral es baja**, y el desempeño laboral general se mantiene apenas por encima del promedio.
 
 Este perfil refleja municipios con **condiciones estructurales razonables**, pero sin un mercado de trabajo dinámico que aproveche plenamente ese capital social y tecnológico. La presencia étnica es moderada y no constituye un rasgo distintivo central.
 
@@ -1061,7 +1179,9 @@ Son territorios que podrían beneficiarse de políticas orientadas a **articular
 
 ### Cluster 5 – Municipios con rezagos estructurales múltiples
 
-Este cluster concentra municipios con **bajo nivel educativo**, **débil acceso a servicios básicos** y **limitado acceso a TICs**. Aunque la participación laboral aparece relativamente alta, el desempeño laboral general es bajo, lo que sugiere **inserciones laborales precarias o de baja calidad**.
+Con 1.069 municipios (casi la mitad del total) y una población promedio de 37.832 habitantes, este cluster concentra los municipios de mayor tamaño relativo y mayor proporción urbana (18,9%).
+
+Concentra municipios con **bajo nivel educativo**, **débil acceso a servicios básicos** y **limitado acceso a TICs**. Aunque la participación laboral aparece relativamente alta, el desempeño laboral general es bajo, lo que sugiere **inserciones laborales precarias o de baja calidad**.
 
 La composición étnica no presenta extremos, pero se inserta en un contexto general de rezago estructural. Este perfil refleja territorios con **carencias múltiples**, donde las limitaciones educativas, infraestructurales y tecnológicas se refuerzan mutuamente.
 
@@ -1069,18 +1189,21 @@ Desde una perspectiva de política pública, estos municipios requieren **interv
 
 ### Cluster 6 – Municipios con fuerte especificidad étnica y aislamiento estructural
 
-El sexto cluster presenta un perfil claramente diferenciado, con **valores extremadamente bajos en las dimensiones étnicas**, lo que indica una fuerte concentración o particularidad en la composición poblacional. A su vez, muestra **desempeños bajos en participación y empleo**, junto con niveles moderados de acceso a servicios y TICs.
+El sexto cluster (21 municipios) es muy minoritario. Presenta un perfil claramente diferenciado, con **valores extremadamente bajos en las dimensiones étnicas**, lo que indica una fuerte concentración o particularidad en la composición poblacional. A su vez, muestra **desempeños bajos en participación y empleo**, junto con niveles moderados de acceso a servicios y TICs.
 
 Este patrón sugiere municipios con **alta especificidad sociocultural**, probablemente pequeños o rurales, donde las dinámicas económicas y laborales están fuertemente condicionadas por factores estructurales y territoriales.
 
 Se trata de territorios que requieren **políticas focalizadas y culturalmente pertinentes**, ya que los instrumentos estándar de desarrollo pueden resultar insuficientes o inadecuados.
 
-```{r}
-# ======================================================
-# FASE 5 – VALIDACIÓN E INTERPRETACIÓN CON RANDOM FOREST
-# ======================================================
+# 5. Validación e interpretación con Random Forest
 
-library(randomForest)
+Con el objetivo de validar la consistencia interna y la interpretabilidad de la tipología territorial obtenida mediante el algoritmo K-means, se implementó un modelo de clasificación supervisada utilizando el algoritmo Random Forest. Este enfoque permite evaluar en qué medida las dimensiones utilizadas en el clustering contribuyen efectivamente a diferenciar los grupos identificados.
+
+A diferencia de los métodos no supervisados, como K-means o el clustering jerárquico, que identifican agrupamientos sin una variable objetivo explícita, el Random Forest es un método supervisado que construye múltiples árboles de decisión para predecir la pertenencia a cada cluster a partir de las variables explicativas. En este caso, la variable dependiente fue la asignación a cluster obtenida mediante K-means, mientras que las variables independientes fueron los scores de los componentes principales correspondientes a las dimensiones de educación, mercado laboral, acceso a servicios, acceso a tecnologías de la información y comunicación, y composición étnica.
+
+Este procedimiento permite evaluar si los clusters identificados constituyen grupos estructuralmente diferenciados y, adicionalmente, identificar cuáles dimensiones son más relevantes para explicar dicha diferenciación.
+
+```{r}
 
 # ------------------------------------------------------
 # 1. Preparamos la base para RF
@@ -1129,6 +1252,14 @@ importancia_rf <- importance(rf_model, type = 2) %>%
   arrange(desc(MeanDecreaseGini))
 
 importancia_rf
+# ======================================================
+# TABLA 6 – IMPORTANCIA RANDOM FOREST
+# ======================================================
+
+write_xlsx(
+  importancia_rf,
+  "outputs/tablas/06_importancia_random_forest.xlsx"
+)
 
 # ------------------------------------------------------
 # 4. Gráfico de importancia
@@ -1147,34 +1278,66 @@ ggplot(importancia_rf,
   ) +
   theme_minimal()
 
-# ------------------------------------------------------
-# 5. Chequeo territorial: Urbano / Rural por cluster
-# ------------------------------------------------------
 
-urbano_cluster <- base_perfiles %>%
-  group_by(cluster_kmeans) %>%
-  summarise(
-    proporcion_urbano = mean(urbano, na.rm = TRUE),
-    poblacion_promedio = mean(poblacion, na.rm = TRUE),
-    n_municipios = n(),
-    .groups = "drop"
-  )
+# Accuracy del modelo
 
-urbano_cluster
+pred <- predict(rf_model, rf_data)
 
-# ------------------------------------------------------
-# 6. Visualización urbano / rural
-# ------------------------------------------------------
+accuracy <- mean(pred == rf_data$cluster_kmeans)
 
-ggplot(urbano_cluster,
-       aes(x = cluster_kmeans, y = proporcion_urbano)) +
-  geom_col(fill = "darkorange") +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "Composición urbano-rural por cluster",
-    x = "Cluster",
-    y = "Proporción de municipios urbanos"
-  ) +
-  theme_minimal()
+accuracy
+#matriz de confusion
+table(
+  Real = rf_data$cluster_kmeans,
+  Predicho = predict(rf_model, rf_data)
+)
 
+# ======================================================
+# TABLA 8 – CORRELACIÓN ENTRE DIMENSIONES PCA
+# ======================================================
+
+correlacion_dimensiones <- base_perfiles %>%
+  select(all_of(vars_scores)) %>%
+  cor()
+
+write_xlsx(
+  as.data.frame(correlacion_dimensiones),
+  "outputs/tablas/08_correlacion_dimensiones_pca.xlsx"
+)
 ```
+
+### 5.1 Importancia de variables y capacidad discriminante
+
+El modelo Random Forest calcula la importancia relativa de cada dimensión mediante el indicador *Mean Decrease Gini*, que mide cuánto contribuye cada variable a reducir la impureza en el proceso de clasificación. En términos sustantivos, este indicador refleja la capacidad de cada dimensión para distinguir entre los perfiles territoriales identificados. Valores más elevados indican mayor poder discriminante.
+
+Los resultados muestran que las dimensiones vinculadas al mercado laboral, el nivel educativo y el acceso a servicios básicos presentan los mayores niveles de importancia relativa. Esto sugiere que estos factores constituyen los principales ejes estructurantes de la diferenciación territorial observada. En otras palabras, la tipología construida organiza a los municipios principalmente en función de condiciones estructurales asociadas a oportunidades económicas, capital humano e infraestructura básica.
+
+Por el contrario, las dimensiones relacionadas con la composición étnica y ciertos aspectos del acceso a tecnologías de la información presentan menor peso relativo en la clasificación. Si bien contribuyen a caracterizar los perfiles, no constituyen los factores centrales de segmentación territorial en este esquema.
+
+Adicionalmente, el modelo alcanza una precisión del 100% en la clasificación de los municipios en sus respectivos clusters. Este resultado indica que los perfiles territoriales presentan una clara separación en el espacio multidimensional definido por las dimensiones estructurales analizadas. Desde una perspectiva metodológica, esto confirma la alta consistencia interna de la tipología y demuestra que los clusters obtenidos mediante K-means no constituyen una partición arbitraria, sino configuraciones coherentes y bien delimitadas.
+
+### 5.2 Interpretación territorial y pertinencia para políticas públicas
+
+El análisis de la composición urbano-rural evidencia que los clusters presentan perfiles territoriales diferenciados. Algunos concentran una mayor proporción de municipios urbanos, caracterizados por mejores niveles de acceso a servicios, mayor integración al mercado laboral formal y mejores indicadores educativos. Otros clusters presentan una mayor presencia de municipios rurales, asociados a menores niveles de infraestructura, menor dinamismo económico y mayores condiciones de vulnerabilidad estructural.
+
+Estos patrones confirman que la tipología no solo refleja diferencias estadísticas abstractas, sino que captura configuraciones territoriales coherentes con la estructura socioeconómica del país.
+
+Desde la perspectiva de la formulación de políticas públicas, esta diferenciación resulta especialmente relevante. La identificación de grupos de municipios con características estructurales similares permite diseñar intervenciones más focalizadas y ajustadas a las necesidades específicas de cada perfil territorial. En lugar de aplicar estrategias homogéneas para territorios heterogéneos, la tipología construida facilita la planificación de políticas diferenciadas en materia de desarrollo productivo, infraestructura, inclusión digital, educación y fortalecimiento institucional.
+
+En este sentido, la robustez estadística de la clasificación —validada mediante Random Forest— refuerza su utilidad como herramienta para la planificación territorial y la asignación estratégica de recursos públicos, contribuyendo a una implementación más eficiente y equitativa de políticas orientadas a reducir desigualdades territoriales.
+
+# 6. Conclusión general
+
+El presente trabajo tuvo como objetivo construir una tipología territorial de municipios a partir de información multidimensional estandarizada, con el fin de identificar patrones estructurales de desigualdad territorial y generar una herramienta analítica útil para el diseño de políticas públicas diferenciadas.
+
+Para ello, en una primera etapa se aplicó Análisis de Componentes Principales (PCA) sobre las distintas dimensiones relevantes del desarrollo territorial —educación, mercado laboral, acceso a servicios, tecnologías de la información y composición étnica—. Esta técnica permitió reducir la dimensionalidad del conjunto de indicadores originales, sintetizando la información en un número reducido de componentes que capturan las principales fuentes de variación estructural entre municipios. La construcción de scores por dimensión permitió obtener variables comparables, independientes entre sí y libres de redundancias estadísticas, facilitando su utilización en técnicas de aprendizaje no supervisado.
+
+En una segunda etapa, se aplicaron métodos de clustering, particularmente el algoritmo K-means y el método jerárquico de Ward, con el objetivo de identificar grupos de municipios con perfiles estructurales similares. La selección del número óptimo de clusters se realizó mediante el método del codo y el análisis de silueta, garantizando una partición consistente y estadísticamente justificada. La comparación entre ambos métodos mostró resultados coherentes y robustos, confirmando la estabilidad de la estructura territorial identificada. El algoritmo K-means fue adoptado como tipología final debido a su mayor capacidad para generar grupos homogéneos internamente y claramente diferenciados entre sí.
+
+La tipología resultante permitió identificar seis perfiles territoriales diferenciados, que reflejan configuraciones específicas de acceso a infraestructura, integración laboral, capital humano, inclusión digital y composición social. El análisis de centroides mostró que las principales dimensiones estructurantes de la diferenciación territorial son el acceso a servicios básicos, el acceso a tecnologías de la información y el desempeño del mercado laboral. Asimismo, el análisis de la composición urbano-rural confirmó que los clusters presentan patrones territoriales coherentes, distinguiendo entre municipios urbanos consolidados, territorios intermedios y municipios predominantemente rurales con distintos niveles de vulnerabilidad estructural.
+
+La validación mediante el algoritmo Random Forest confirmó la robustez interna de la tipología, mostrando que las dimensiones utilizadas poseen una alta capacidad para explicar la pertenencia de cada municipio a su respectivo cluster. La importancia relativa de las variables confirmó que el acceso a infraestructura y la inclusión digital constituyen los principales ejes de segmentación territorial, seguidos por el capital humano y la integración laboral. Esto demuestra que la tipología construida no representa una partición arbitraria, sino que refleja patrones estructurales consistentes del desarrollo territorial.
+
+Desde la perspectiva de política pública, esta tipología constituye una herramienta particularmente valiosa para el diseño e implementación de estrategias territorialmente diferenciadas. La evidencia muestra que los municipios no forman un conjunto homogéneo, sino que presentan perfiles estructurales claramente diferenciados en términos de capacidades, oportunidades y condiciones socioeconómicas. En este sentido, la tipología permite identificar territorios prioritarios para la expansión de infraestructura básica, fortalecer políticas de inclusión laboral en municipios con debilidad estructural, y diseñar estrategias específicas de desarrollo territorial adaptadas a las características particulares de cada grupo de municipios.
+
+En conjunto, los resultados demuestran la utilidad de los métodos de reducción dimensional y aprendizaje no supervisado como herramientas para el análisis territorial, permitiendo transformar grandes volúmenes de información multidimensional en tipologías interpretables, empíricamente robustas y directamente aplicables al diseño de políticas públicas basadas en evidencia.
